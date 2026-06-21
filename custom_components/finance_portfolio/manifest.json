@@ -1,0 +1,11 @@
+{
+  "domain": "finance_portfolio",
+  "name": "Finance Portfolio",
+  "codeowners": [],
+  "config_flow": true,
+  "dependencies": [],
+  "documentation": "https://github.com/dr-apple/home-assistant-finance-portfolio",
+  "iot_class": "cloud_polling",
+  "requirements": [],
+  "version": "0.1.0"
+}
