@@ -28,6 +28,14 @@ from homeassistant.util import dt as dt_util
 
 from .const import (
     DEFAULT_SCAN_INTERVAL,
+    CONF_ALERT_DOWN_THRESHOLDS,
+    CONF_ALERT_ENABLED,
+    CONF_ALERT_UP_THRESHOLDS,
+    CONF_ASSET_ALERTS,
+    CONF_DEFAULT_DOWN_THRESHOLDS,
+    CONF_DEFAULT_UP_THRESHOLDS,
+    CONF_NOTIFY_SERVICES,
+    DEFAULT_ALERT_THRESHOLDS,
     DOMAIN,
     EVENT_ALARM,
     GERMAN_EXCHANGE_SUFFIXES,
@@ -39,6 +47,7 @@ from .const import (
     SERVICE_REFRESH,
     SERVICE_REMOVE_ASSET,
     SERVICE_RESET_ALARM,
+    SERVICE_SET_ALERT,
     SIGNAL_ASSET_ADDED,
     STORE_KEY,
     STORE_VERSION,
@@ -90,6 +99,18 @@ ADD_ASSET_SCHEMA = vol.Schema(
 
 REMOVE_ASSET_SCHEMA = vol.Schema({vol.Required("asset_id"): cv.string})
 RESET_ALARM_SCHEMA = vol.Schema({vol.Required("asset_id"): cv.string})
+SET_ALERT_SCHEMA = vol.Schema(
+    {
+        vol.Required("asset_id"): cv.string,
+        vol.Optional(CONF_ALERT_ENABLED, default=True): cv.boolean,
+        vol.Optional(
+            CONF_ALERT_UP_THRESHOLDS, default=DEFAULT_ALERT_THRESHOLDS
+        ): vol.All(cv.ensure_list, [vol.Coerce(float)]),
+        vol.Optional(
+            CONF_ALERT_DOWN_THRESHOLDS, default=DEFAULT_ALERT_THRESHOLDS
+        ): vol.All(cv.ensure_list, [vol.Coerce(float)]),
+    }
+)
 
 
 def _slugify(value: str) -> str:
@@ -108,6 +129,31 @@ def _to_float(value: Any) -> float | None:
         return float(value)
     except (TypeError, ValueError):
         return None
+
+
+def _thresholds(values: Any) -> list[float]:
+    """Return sorted positive alert thresholds."""
+    if values is None:
+        values = DEFAULT_ALERT_THRESHOLDS
+    if isinstance(values, str):
+        values = [values]
+    result = []
+    for value in values:
+        numeric = _to_float(value)
+        if numeric is not None and numeric > 0:
+            result.append(numeric)
+    return sorted(set(result))
+
+
+def _notify_services(value: Any) -> list[str]:
+    """Return configured notify service names."""
+    if not value:
+        return []
+    if isinstance(value, str):
+        raw_services = value.replace("\n", ",").split(",")
+    else:
+        raw_services = value
+    return [str(service).strip() for service in raw_services if str(service).strip()]
 
 
 @dataclass(slots=True)
@@ -129,9 +175,12 @@ class PortfolioQuote:
 class FinancePortfolioRuntime:
     """Runtime state and Yahoo access for the portfolio."""
 
-    def __init__(self, hass: HomeAssistant, scan_interval) -> None:
+    def __init__(
+        self, hass: HomeAssistant, scan_interval, options: dict[str, Any]
+    ) -> None:
         self.hass = hass
         self.scan_interval = scan_interval
+        self.options = options
         self.store = Store(hass, STORE_VERSION, STORE_KEY)
         self.assets: dict[str, dict[str, Any]] = {}
         self.quotes: dict[str, PortfolioQuote] = {}
@@ -165,7 +214,7 @@ class FinancePortfolioRuntime:
     async def async_refresh(self) -> None:
         async with self._refresh_lock:
             await self._async_fetch_quotes()
-            changed = self._update_period_refs_and_alarm_state()
+            changed = await self._update_period_refs_and_alarm_state()
             if changed:
                 await self.async_save()
             async_dispatcher_send(self.hass, f"{DOMAIN}_updated")
@@ -224,6 +273,7 @@ class FinancePortfolioRuntime:
             "trough_ref": None,
             "last_alarm": None,
             "last_alarm_price": None,
+            "alert_state": {},
         }
         await self.async_save()
         await self.async_refresh()
@@ -250,6 +300,38 @@ class FinancePortfolioRuntime:
         asset["trough_ref"] = price
         asset["last_alarm"] = None
         asset["last_alarm_price"] = None
+        asset["alert_state"] = {}
+        await self.async_save()
+        async_dispatcher_send(self.hass, f"{DOMAIN}_updated")
+
+    async def async_set_alert(
+        self,
+        asset_id: str,
+        *,
+        enabled: bool,
+        up_thresholds: list[float],
+        down_thresholds: list[float],
+    ) -> None:
+        """Set alert options for one asset in the config entry options."""
+        asset_id = _slugify(asset_id)
+        if asset_id not in self.assets:
+            raise ValueError(f"{asset_id} wurde nicht gefunden")
+
+        entries = self.hass.config_entries.async_entries(DOMAIN)
+        if not entries:
+            raise ValueError("Finance Portfolio config entry wurde nicht gefunden")
+
+        entry = entries[0]
+        options = dict(entry.options)
+        asset_alerts = dict(options.get(CONF_ASSET_ALERTS, {}))
+        asset_alerts[asset_id] = {
+            CONF_ALERT_ENABLED: enabled,
+            CONF_ALERT_UP_THRESHOLDS: _thresholds(up_thresholds),
+            CONF_ALERT_DOWN_THRESHOLDS: _thresholds(down_thresholds),
+        }
+        options[CONF_ASSET_ALERTS] = asset_alerts
+        self.hass.config_entries.async_update_entry(entry, options=options)
+        self.options = options
         await self.async_save()
         async_dispatcher_send(self.hass, f"{DOMAIN}_updated")
 
@@ -510,7 +592,7 @@ class FinancePortfolioRuntime:
                 LOGGER.warning("Yahoo crumb request failed: %s", err)
                 return
 
-    def _update_period_refs_and_alarm_state(self) -> bool:
+    async def _update_period_refs_and_alarm_state(self) -> bool:
         changed = False
         now = dt_util.now()
         week_key = f"{now.isocalendar().year}-{now.isocalendar().week:02d}"
@@ -538,54 +620,139 @@ class FinancePortfolioRuntime:
 
             peak = float(asset["peak_ref"])
             trough = float(asset["trough_ref"])
-            cooldown_ok = True
-            last_alarm = asset.get("last_alarm")
-            if last_alarm:
-                last_dt = dt_util.parse_datetime(last_alarm)
-                if last_dt is not None:
-                    cooldown_ok = (now - last_dt).total_seconds() >= 15 * 60
-
             up_pct = ((price - trough) / trough) * 100 if trough > 0 else 0
             down_pct = ((price - peak) / peak) * 100 if peak > 0 else 0
             direction = None
             change_pct = None
             reference = None
-            if price >= trough * 1.01 and cooldown_ok:
+            threshold = None
+            alert_config = self._alert_config(asset_id)
+            if alert_config[CONF_ALERT_ENABLED]:
+                up_thresholds = alert_config[CONF_ALERT_UP_THRESHOLDS]
+                down_thresholds = alert_config[CONF_ALERT_DOWN_THRESHOLDS]
+            else:
+                up_thresholds = []
+                down_thresholds = []
+
+            crossed_up = [item for item in up_thresholds if up_pct >= item]
+            crossed_down = [item for item in down_thresholds if abs(down_pct) >= item]
+            if crossed_up:
                 direction = "up"
                 change_pct = round(up_pct, 2)
                 reference = trough
-            elif price <= peak * 0.99 and cooldown_ok:
+                threshold = max(crossed_up)
+            elif crossed_down:
                 direction = "down"
                 change_pct = round(down_pct, 2)
                 reference = peak
+                threshold = max(crossed_down)
 
-            if direction:
-                asset["peak_ref"] = price
-                asset["trough_ref"] = price
+            if direction and threshold and self._should_fire_alert(asset, direction, threshold):
                 asset["last_alarm"] = now.isoformat()
                 asset["last_alarm_price"] = price
-                self.hass.bus.async_fire(
-                    EVENT_ALARM,
-                    {
-                        "asset_id": asset_id,
-                        "name": asset.get("name"),
-                        "symbol": asset.get("symbol"),
-                        "direction": direction,
-                        "change_pct": change_pct,
-                        "reference": reference,
-                        "price_eur": price,
-                    },
+                asset["alert_state"] = {
+                    "direction": direction,
+                    "threshold": threshold,
+                    "reference": reference,
+                }
+                await self._async_fire_alert(
+                    asset_id,
+                    asset,
+                    direction,
+                    change_pct,
+                    threshold,
+                    reference,
+                    price,
                 )
                 changed = True
-            else:
-                if price > peak:
-                    asset["peak_ref"] = price
-                    changed = True
-                if price < trough:
-                    asset["trough_ref"] = price
-                    changed = True
+
+            if price > peak:
+                asset["peak_ref"] = price
+                if (asset.get("alert_state") or {}).get("direction") == "down":
+                    asset["alert_state"] = {}
+                changed = True
+            if price < trough:
+                asset["trough_ref"] = price
+                if (asset.get("alert_state") or {}).get("direction") == "up":
+                    asset["alert_state"] = {}
+                changed = True
 
         return changed
+
+    def _alert_config(self, asset_id: str) -> dict[str, Any]:
+        asset_alerts = self.options.get(CONF_ASSET_ALERTS, {})
+        asset_config = asset_alerts.get(asset_id, {})
+        return {
+            CONF_ALERT_ENABLED: asset_config.get(CONF_ALERT_ENABLED, True),
+            CONF_ALERT_UP_THRESHOLDS: _thresholds(
+                asset_config.get(
+                    CONF_ALERT_UP_THRESHOLDS,
+                    self.options.get(
+                        CONF_DEFAULT_UP_THRESHOLDS, DEFAULT_ALERT_THRESHOLDS
+                    ),
+                )
+            ),
+            CONF_ALERT_DOWN_THRESHOLDS: _thresholds(
+                asset_config.get(
+                    CONF_ALERT_DOWN_THRESHOLDS,
+                    self.options.get(
+                        CONF_DEFAULT_DOWN_THRESHOLDS, DEFAULT_ALERT_THRESHOLDS
+                    ),
+                )
+            ),
+        }
+
+    def _should_fire_alert(
+        self, asset: dict[str, Any], direction: str, threshold: float
+    ) -> bool:
+        state = asset.get("alert_state") or {}
+        if state.get("direction") != direction:
+            return True
+        last_threshold = _to_float(state.get("threshold")) or 0
+        return threshold > last_threshold
+
+    async def _async_fire_alert(
+        self,
+        asset_id: str,
+        asset: dict[str, Any],
+        direction: str,
+        change_pct: float | None,
+        threshold: float,
+        reference: float | None,
+        price: float,
+    ) -> None:
+        event_data = {
+            "asset_id": asset_id,
+            "name": asset.get("name"),
+            "symbol": asset.get("symbol"),
+            "direction": direction,
+            "change_pct": change_pct,
+            "threshold": threshold,
+            "reference": reference,
+            "price_eur": price,
+        }
+        self.hass.bus.async_fire(EVENT_ALARM, event_data)
+
+        direction_label = "steigt" if direction == "up" else "faellt"
+        name = asset.get("name") or asset.get("symbol") or asset_id
+        message = (
+            f"{name} {direction_label} um {change_pct} %. "
+            f"Schwelle: {threshold:g} %. Kurs: {price:.2f} EUR."
+        )
+        for service_name in _notify_services(self.options.get(CONF_NOTIFY_SERVICES)):
+            if "." in service_name:
+                domain, service = service_name.split(".", 1)
+            else:
+                domain, service = "notify", service_name
+            if not self.hass.services.has_service(domain, service):
+                LOGGER.warning("Notify service %s.%s was not found", domain, service)
+                continue
+            await self.hass.services.async_call(
+                domain,
+                service,
+                {"title": "Finance Portfolio", "message": message},
+                blocking=False,
+            )
 
     def asset_summary(self) -> list[dict[str, Any]]:
         result = []
@@ -614,6 +781,7 @@ class FinancePortfolioRuntime:
                     "peak_ref": asset.get("peak_ref"),
                     "trough_ref": asset.get("trough_ref"),
                     "last_alarm": asset.get("last_alarm"),
+                    "alert": self._alert_config(asset_id),
                     "market_state": quote.market_state if quote else None,
                     "source_currency": quote.source_currency if quote else None,
                 }
@@ -663,10 +831,13 @@ async def async_setup_entry(
     """Set up Finance Portfolio from a config entry."""
     conf = dict(entry.data)
     runtime = FinancePortfolioRuntime(
-        hass, conf.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)
+        hass,
+        conf.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL),
+        dict(entry.options),
     )
     await runtime.async_load()
     hass.data.setdefault(DOMAIN, {})["runtime"] = runtime
+    entry.async_on_unload(entry.add_update_listener(_async_update_listener))
 
     async def handle_add(call: ServiceCall) -> None:
         current_runtime = hass.data[DOMAIN]["runtime"]
@@ -700,15 +871,43 @@ async def async_setup_entry(
             LOGGER.exception("Unable to reset portfolio alarm")
             await _notify(hass, "Finance Portfolio Fehler", str(err))
 
+    async def handle_set_alert(call: ServiceCall) -> None:
+        current_runtime = hass.data[DOMAIN]["runtime"]
+        try:
+            await current_runtime.async_set_alert(**call.data)
+        except Exception as err:  # noqa: BLE001
+            LOGGER.exception("Unable to set portfolio alert")
+            await _notify(hass, "Finance Portfolio Fehler", str(err))
+
     if not hass.services.has_service(DOMAIN, SERVICE_ADD_ASSET):
-        hass.services.async_register(DOMAIN, SERVICE_ADD_ASSET, handle_add, schema=ADD_ASSET_SCHEMA)
-        hass.services.async_register(DOMAIN, SERVICE_REMOVE_ASSET, handle_remove, schema=REMOVE_ASSET_SCHEMA)
+        hass.services.async_register(
+            DOMAIN, SERVICE_ADD_ASSET, handle_add, schema=ADD_ASSET_SCHEMA
+        )
+    if not hass.services.has_service(DOMAIN, SERVICE_REMOVE_ASSET):
+        hass.services.async_register(
+            DOMAIN, SERVICE_REMOVE_ASSET, handle_remove, schema=REMOVE_ASSET_SCHEMA
+        )
+    if not hass.services.has_service(DOMAIN, SERVICE_REFRESH):
         hass.services.async_register(DOMAIN, SERVICE_REFRESH, handle_refresh)
-        hass.services.async_register(DOMAIN, SERVICE_RESET_ALARM, handle_reset_alarm, schema=RESET_ALARM_SCHEMA)
+    if not hass.services.has_service(DOMAIN, SERVICE_RESET_ALARM):
+        hass.services.async_register(
+            DOMAIN, SERVICE_RESET_ALARM, handle_reset_alarm, schema=RESET_ALARM_SCHEMA
+        )
+    if not hass.services.has_service(DOMAIN, SERVICE_SET_ALERT):
+        hass.services.async_register(
+            DOMAIN, SERVICE_SET_ALERT, handle_set_alert, schema=SET_ALERT_SCHEMA
+        )
 
     await hass.config_entries.async_forward_entry_setups(entry, [Platform.SENSOR])
     await runtime.async_start()
     return True
+
+
+async def _async_update_listener(
+    hass: HomeAssistant, entry: config_entries.ConfigEntry
+) -> None:
+    """Reload the integration when options change."""
+    await hass.config_entries.async_reload(entry.entry_id)
 
 
 async def async_unload_entry(

@@ -67,3 +67,48 @@ reset_alarm:
       required: true
       selector:
         text:
+
+set_alert:
+  name: Push-Alarm konfigurieren
+  description: Konfiguriert Plus-/Minus-Schwellen fuer Push-Alarme eines Wertpapiers.
+  fields:
+    asset_id:
+      name: Asset ID
+      required: true
+      selector:
+        text:
+    enabled:
+      name: Aktiv
+      default: true
+      selector:
+        boolean:
+    up_thresholds:
+      name: Plus-Schwellen
+      description: Prozent-Schwellen fuer steigende Kurse.
+      default:
+        - 1
+      selector:
+        select:
+          multiple: true
+          options:
+            - label: 1 %
+              value: 1
+            - label: 5 %
+              value: 5
+            - label: 10 %
+              value: 10
+    down_thresholds:
+      name: Minus-Schwellen
+      description: Prozent-Schwellen fuer fallende Kurse.
+      default:
+        - 1
+      selector:
+        select:
+          multiple: true
+          options:
+            - label: 1 %
+              value: 1
+            - label: 5 %
+              value: 5
+            - label: 10 %
+              value: 10

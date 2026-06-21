@@ -1,0 +1,45 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Finance Portfolio"
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "menu_options": {
+          "global_options": "Global push settings",
+          "asset_alert": "Push alert per asset"
+        }
+      },
+      "global_options": {
+        "title": "Global push settings",
+        "description": "Enter notify services separated by commas, for example notify.mobile_app_dannys_iphone, notify.mobile_app_ipad.",
+        "data": {
+          "notify_services": "Push targets",
+          "default_up_thresholds": "Default up thresholds",
+          "default_down_thresholds": "Default down thresholds"
+        }
+      },
+      "asset_alert": {
+        "title": "Select asset",
+        "data": {
+          "asset_id": "Asset"
+        }
+      },
+      "asset_alert_edit": {
+        "title": "Configure push alert",
+        "data": {
+          "enabled": "Push alert enabled",
+          "up_thresholds": "Up thresholds",
+          "down_thresholds": "Down thresholds"
+        }
+      }
+    },
+    "abort": {
+      "no_assets": "No assets have been added yet."
+    }
+  }
+}

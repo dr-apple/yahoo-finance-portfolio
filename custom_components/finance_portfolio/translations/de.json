@@ -1,0 +1,45 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Finance Portfolio"
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "menu_options": {
+          "global_options": "Globale Push-Einstellungen",
+          "asset_alert": "Push-Alarm pro Wertpapier"
+        }
+      },
+      "global_options": {
+        "title": "Globale Push-Einstellungen",
+        "description": "Trage Notify-Services kommasepariert ein, z. B. notify.mobile_app_dannys_iphone, notify.mobile_app_ipad.",
+        "data": {
+          "notify_services": "Push-Ziele",
+          "default_up_thresholds": "Standard Plus-Schwellen",
+          "default_down_thresholds": "Standard Minus-Schwellen"
+        }
+      },
+      "asset_alert": {
+        "title": "Wertpapier auswaehlen",
+        "data": {
+          "asset_id": "Wertpapier"
+        }
+      },
+      "asset_alert_edit": {
+        "title": "Push-Alarm konfigurieren",
+        "data": {
+          "enabled": "Push-Alarm aktiv",
+          "up_thresholds": "Plus-Schwellen",
+          "down_thresholds": "Minus-Schwellen"
+        }
+      }
+    },
+    "abort": {
+      "no_assets": "Es sind noch keine Wertpapiere vorhanden."
+    }
+  }
+}
