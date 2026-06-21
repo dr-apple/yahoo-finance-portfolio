@@ -55,7 +55,7 @@ class FinancePortfolioOptionsFlow(config_entries.OptionsFlow):
     """Handle Finance Portfolio options."""
 
     def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
-        self.config_entry = config_entry
+        self._config_entry = config_entry
         self._asset_id: str | None = None
 
     async def async_step_init(
@@ -71,7 +71,7 @@ class FinancePortfolioOptionsFlow(config_entries.OptionsFlow):
         self, user_input: dict[str, Any] | None = None
     ) -> config_entries.ConfigFlowResult:
         """Configure global notification options."""
-        options = dict(self.config_entry.options)
+        options = dict(self._config_entry.options)
         if user_input is not None:
             options[CONF_NOTIFY_SERVICES] = user_input[CONF_NOTIFY_SERVICES]
             options[CONF_DEFAULT_UP_THRESHOLDS] = user_input[
@@ -142,7 +142,7 @@ class FinancePortfolioOptionsFlow(config_entries.OptionsFlow):
         if not self._asset_id:
             return await self.async_step_asset_alert()
 
-        options = dict(self.config_entry.options)
+        options = dict(self._config_entry.options)
         asset_alerts = dict(options.get(CONF_ASSET_ALERTS, {}))
         current = dict(asset_alerts.get(self._asset_id, {}))
 

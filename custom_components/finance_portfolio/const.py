@@ -21,6 +21,7 @@ SERVICE_RESET_ALARM = "reset_alarm"
 SERVICE_SET_ALERT = "set_alert"
 
 SIGNAL_ASSET_ADDED = f"{DOMAIN}_asset_added"
+SIGNAL_ASSET_REMOVED = f"{DOMAIN}_asset_removed"
 EVENT_ALARM = f"{DOMAIN}_alarm"
 
 CONF_NOTIFY_SERVICES = "notify_services"
