@@ -12,7 +12,7 @@ from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.typing import ConfigType, DiscoveryInfoType, StateType
 
 from . import FinancePortfolioRuntime
-from .const import DOMAIN, SIGNAL_ASSET_ADDED
+from .const import DOMAIN, SIGNAL_ASSET_ADDED, SIGNAL_ASSET_REMOVED
 
 
 async def async_setup_entry(
@@ -101,7 +101,7 @@ class PortfolioMetricSensor(SensorEntity):
         self.runtime = runtime
         self.asset_id = asset_id
         self.metric = metric
-        self._unsub = None
+        self._unsubs = []
         self._attr_unique_id = f"finance_portfolio_{asset_id}_{metric}"
         if metric != "price":
             self._attr_state_class = SensorStateClass.MEASUREMENT
@@ -177,10 +177,23 @@ class PortfolioMetricSensor(SensorEntity):
         }
 
     async def async_added_to_hass(self) -> None:
-        self._unsub = async_dispatcher_connect(
-            self.hass, f"{DOMAIN}_updated", self.async_write_ha_state
+        self._unsubs.append(
+            async_dispatcher_connect(
+                self.hass, f"{DOMAIN}_updated", self.async_write_ha_state
+            )
+        )
+        self._unsubs.append(
+            async_dispatcher_connect(
+                self.hass, SIGNAL_ASSET_REMOVED, self._async_asset_removed
+            )
         )
 
+    @callback
+    def _async_asset_removed(self, asset_id: str) -> None:
+        if asset_id == self.asset_id:
+            self.hass.async_create_task(self.async_remove(force_remove=True))
+
     async def async_will_remove_from_hass(self) -> None:
-        if self._unsub:
-            self._unsub()
+        for unsub in self._unsubs:
+            unsub()
+        self._unsubs.clear()

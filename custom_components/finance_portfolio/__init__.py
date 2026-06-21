@@ -21,6 +21,7 @@ from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.helpers import config_validation as cv
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.dispatcher import async_dispatcher_send
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.typing import ConfigType
@@ -49,6 +50,7 @@ from .const import (
     SERVICE_RESET_ALARM,
     SERVICE_SET_ALERT,
     SIGNAL_ASSET_ADDED,
+    SIGNAL_ASSET_REMOVED,
     STORE_KEY,
     STORE_VERSION,
     SUPPORTED_QUOTE_TYPES,
@@ -286,8 +288,36 @@ class FinancePortfolioRuntime:
             raise ValueError(f"{asset_id} wurde nicht gefunden")
         self.assets.pop(asset_id)
         self.quotes.pop(asset_id, None)
+        self._remove_asset_alert_options(asset_id)
+        self._remove_asset_entities(asset_id)
         await self.async_save()
+        async_dispatcher_send(self.hass, SIGNAL_ASSET_REMOVED, asset_id)
         async_dispatcher_send(self.hass, f"{DOMAIN}_updated")
+
+    def _remove_asset_alert_options(self, asset_id: str) -> None:
+        entries = self.hass.config_entries.async_entries(DOMAIN)
+        if not entries:
+            return
+        entry = entries[0]
+        options = dict(entry.options)
+        asset_alerts = dict(options.get(CONF_ASSET_ALERTS, {}))
+        if asset_id not in asset_alerts:
+            return
+        asset_alerts.pop(asset_id)
+        options[CONF_ASSET_ALERTS] = asset_alerts
+        self.options = options
+        self.hass.config_entries.async_update_entry(entry, options=options)
+
+    def _remove_asset_entities(self, asset_id: str) -> None:
+        registry = er.async_get(self.hass)
+        for metric in ("price", "day", "week", "month"):
+            entity_id = registry.async_get_entity_id(
+                Platform.SENSOR,
+                DOMAIN,
+                f"finance_portfolio_{asset_id}_{metric}",
+            )
+            if entity_id:
+                registry.async_remove(entity_id)
 
     async def async_reset_alarm(self, asset_id: str) -> None:
         asset_id = _slugify(asset_id)
