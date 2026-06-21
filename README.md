@@ -21,7 +21,8 @@ It creates EUR-normalized price sensors, day/week/month percentage sensors, a ma
   - input field for new assets
   - remove button per asset
   - clickable day/week/month pills
-- Basic alarm event when a price moves by 1% from the tracked high/low reference
+- Configurable push alarms per asset for +1/+5/+10% and -1/-5/-10%
+- Global mobile push targets via Home Assistant notify services
 
 ## Installation With HACS
 
@@ -65,6 +66,35 @@ After updating the card, hard refresh the browser or append a cache buster to th
 
 ```text
 /finance_portfolio/finance-portfolio-card.js?v=1
+```
+
+## Push Alarms
+
+Open **Settings > Devices & services > Finance Portfolio > Configure**.
+
+1. In **Global push settings**, enter one or more notify services separated by commas:
+
+```text
+notify.mobile_app_dannys_iphone, notify.mobile_app_ipad
+```
+
+2. In **Push alert per asset**, select an asset and choose the active plus/minus thresholds:
+
+```text
++1%, +5%, +10%
+-1%, -5%, -10%
+```
+
+The integration still fires this Home Assistant event for automations:
+
+```text
+finance_portfolio_alarm
+```
+
+Event data includes:
+
+```text
+asset_id, name, symbol, direction, change_pct, threshold, reference, price_eur
 ```
 
 ## Services
@@ -136,6 +166,25 @@ data:
   asset_id: a1jwvx
 ```
 
+### `finance_portfolio.set_alert`
+
+Configure push alarm thresholds for an asset.
+
+```yaml
+service: finance_portfolio.set_alert
+data:
+  asset_id: a1jwvx
+  enabled: true
+  up_thresholds:
+    - 1
+    - 5
+    - 10
+  down_thresholds:
+    - 1
+    - 5
+    - 10
+```
+
 ## Manual Mappings
 
 Yahoo does not always resolve German WKNs. The integration contains a small manual mapping table in:
@@ -184,6 +233,7 @@ It exposes an `assets` attribute used by the custom Lovelace card.
 │       ├── const.py
 │       ├── manifest.json
 │       ├── sensor.py
+│       ├── translations/
 │       ├── services.yaml
 │       └── www/
 │           └── finance-portfolio-card.js
