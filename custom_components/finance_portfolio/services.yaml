@@ -1,0 +1,69 @@
+add_asset:
+  name: Wertpapier hinzufuegen
+  description: Fuegt ein Wertpapier per freier Suche, ISIN, WKN oder Yahoo-Symbol zur Finance-Portfolio-Watchlist hinzu.
+  fields:
+    query:
+      name: Suche
+      description: Freier Suchbegriff, z. B. Name, ISIN, WKN oder Yahoo-Symbol.
+      example: Meta Platforms
+      selector:
+        text:
+    wkn:
+      name: WKN
+      description: Deutsche WKN, die ueber Yahoo Finance gesucht wird.
+      example: A1JX52
+      selector:
+        text:
+    isin:
+      name: ISIN
+      description: Internationale Wertpapierkennung, die ueber Yahoo Finance gesucht wird.
+      example: US30303M1027
+      selector:
+        text:
+    symbol:
+      name: Yahoo Symbol
+      description: Optionales Yahoo-Finance-Symbol, falls die automatische WKN-Suche nicht eindeutig ist.
+      example: EUNL.DE
+      selector:
+        text:
+    name:
+      name: Name
+      description: Optionaler Anzeigename.
+      selector:
+        text:
+    icon:
+      name: Icon
+      description: Optionales MDI Icon.
+      example: mdi:earth
+      selector:
+        icon:
+    force:
+      name: Ueberschreiben
+      description: Vorhandenen Eintrag mit gleicher Such-/WKN-/ISIN-/Symbol-ID ueberschreiben.
+      default: false
+      selector:
+        boolean:
+
+remove_asset:
+  name: Wertpapier entfernen
+  description: Entfernt ein Wertpapier aus der Finance-Portfolio-Watchlist.
+  fields:
+    asset_id:
+      name: Asset ID
+      required: true
+      selector:
+        text:
+
+refresh:
+  name: Aktualisieren
+  description: Aktualisiert alle Kurse sofort.
+
+reset_alarm:
+  name: Alarmreferenz zuruecksetzen
+  description: Setzt Peak/Trough/Alarmreferenz fuer ein Wertpapier auf den aktuellen Kurs.
+  fields:
+    asset_id:
+      name: Asset ID
+      required: true
+      selector:
+        text:
