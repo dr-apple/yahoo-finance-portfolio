@@ -69,7 +69,7 @@ class FinancePortfolioCard extends HTMLElement {
         .fp-row {
           display: grid;
           grid-template-areas: "icon name day week month remove" "icon price day week month remove";
-          grid-template-columns: 54px minmax(30px, 1fr) 65px 65px 65px 34px;
+          grid-template-columns: 54px minmax(30px, 1fr) 64px 64px 64px 34px;
           grid-template-rows: min-content min-content;
           column-gap: 3px;
           align-items: center;
@@ -110,14 +110,18 @@ class FinancePortfolioCard extends HTMLElement {
         }
         .fp-pill {
           height: 32px;
-          min-width: 65px;
-          display: grid;
-          place-items: center;
-          padding: 0 6px;
+          min-width: 64px;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 3px;
+          padding: 0 5px;
           border-radius: 999px;
           color: white;
           font-size: 11px;
           font-weight: 700;
+          line-height: 1;
+          white-space: nowrap;
           cursor: pointer;
           box-sizing: border-box;
         }
@@ -147,11 +151,19 @@ class FinancePortfolioCard extends HTMLElement {
         }
         @media (max-width: 420px) {
           .fp-row {
-            grid-template-columns: 48px minmax(20px, 1fr) 54px 54px 54px 30px;
+            grid-template-columns: 46px minmax(20px, 1fr) 56px 56px 56px 28px;
+            column-gap: 2px;
+            padding: 8px 5px;
+          }
+          .fp-icon {
+            width: 42px;
+            height: 42px;
           }
           .fp-pill {
-            min-width: 54px;
+            min-width: 56px;
             font-size: 10px;
+            padding: 0 3px;
+            gap: 2px;
           }
           .fp-remove {
             width: 28px;
@@ -216,7 +228,7 @@ class FinancePortfolioCard extends HTMLElement {
       : safe < 0
         ? "rgba(220,53,69,0.95)"
         : "rgba(13,110,253,0.95)";
-    return `<div class="fp-pill ${cssClass}" style="background:${color}" data-more-info="${entityId}">${icon} ${safe.toFixed(2)} %</div>`;
+    return `<div class="fp-pill ${cssClass}" style="background:${color}" data-more-info="${entityId}"><span>${icon}</span><span>${safe.toFixed(1)}%</span></div>`;
   }
 
   formatPrice(value) {
