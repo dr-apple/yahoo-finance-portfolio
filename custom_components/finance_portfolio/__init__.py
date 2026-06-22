@@ -163,7 +163,12 @@ def _notify_services(value: Any) -> list[str]:
         raw_services = value.replace("\n", ",").split(",")
     else:
         raw_services = value
-    return [str(service).strip() for service in raw_services if str(service).strip()]
+    blocked = {"notify.notify", "notify.send_message", "notify.persistent_notification"}
+    return [
+        service
+        for item in raw_services
+        if (service := str(item).strip()) and service not in blocked
+    ]
 
 
 @dataclass(slots=True)

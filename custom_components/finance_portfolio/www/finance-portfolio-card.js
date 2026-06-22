@@ -187,17 +187,69 @@ class FinancePortfolioCard extends HTMLElement {
           font-weight: 700;
           color: var(--primary-text-color);
         }
-        .fp-notify-select {
-          width: 100%;
-          min-height: 38px;
+        .fp-notify-editor {
+          display: grid;
+          gap: 8px;
+        }
+        .fp-notify-add {
+          display: grid;
+          grid-template-columns: minmax(0, 1fr) 40px;
+          gap: 8px;
+        }
+        .fp-notify-input {
+          min-width: 0;
+          height: 38px;
           border: 1px solid var(--divider-color);
           border-radius: 10px;
-          padding: 5px 8px;
+          padding: 0 10px;
           color: var(--primary-text-color);
           background: var(--card-background-color);
           font: inherit;
           font-size: 12px;
           box-sizing: border-box;
+        }
+        .fp-notify-button {
+          height: 38px;
+          border: 0;
+          border-radius: 10px;
+          color: white;
+          background: rgba(25,135,84,0.95);
+          font-size: 20px;
+          cursor: pointer;
+        }
+        .fp-notify-chips {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 6px;
+          min-height: 20px;
+        }
+        .fp-chip {
+          display: inline-flex;
+          align-items: center;
+          gap: 6px;
+          max-width: 100%;
+          border: 1px solid rgba(255,255,255,0.10);
+          border-radius: 999px;
+          padding: 5px 8px;
+          background: rgba(255,255,255,0.06);
+          color: var(--primary-text-color);
+          font-size: 11px;
+        }
+        .fp-chip span {
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+        .fp-chip button {
+          border: 0;
+          padding: 0;
+          width: 18px;
+          height: 18px;
+          border-radius: 50%;
+          color: white;
+          background: rgba(220,53,69,0.55);
+          cursor: pointer;
+          line-height: 18px;
         }
         .fp-alert-scroll {
           overflow-x: auto;
@@ -292,18 +344,28 @@ class FinancePortfolioCard extends HTMLElement {
     settings.hidden = !this._settingsOpen;
     if (!this._settingsOpen) return;
 
-    const selectedServices = state?.attributes?.notify_services || [];
+    const selectedServices = this.cleanNotifyServices(state?.attributes?.notify_services || []);
     const notifyServices = this.notifyServiceOptions();
+    const datalistId = `fp-notify-options-${Math.random().toString(36).slice(2)}`;
     settings.innerHTML = `
       <div class="fp-settings-head">
         <div class="fp-settings-label">Push-Ziele</div>
-        <select class="fp-notify-select" multiple size="${Math.min(Math.max(notifyServices.length, 2), 4)}">
-          ${notifyServices.map((service) => `
-            <option value="${this.escape(service)}" ${selectedServices.includes(service) ? "selected" : ""}>
-              ${this.escape(service)}
-            </option>
-          `).join("")}
-        </select>
+        <div class="fp-notify-editor">
+          <div class="fp-notify-add">
+            <input
+              class="fp-notify-input"
+              list="${datalistId}"
+              placeholder="notify.mobile_app_..."
+            />
+            <button class="fp-notify-button" title="Push-Ziel hinzufuegen">+</button>
+            <datalist id="${datalistId}">
+              ${notifyServices.map((service) => `<option value="${this.escape(service)}"></option>`).join("")}
+            </datalist>
+          </div>
+          <div class="fp-notify-chips">
+            ${selectedServices.map((service) => this.notifyChip(service)).join("")}
+          </div>
+        </div>
       </div>
       <div class="fp-alert-scroll">
         <table class="fp-alert-table">
@@ -324,8 +386,12 @@ class FinancePortfolioCard extends HTMLElement {
         </table>
       </div>
     `;
-    settings.querySelector(".fp-notify-select")?.addEventListener("change", (event) => {
-      this.saveNotifyServices([...event.currentTarget.selectedOptions].map((option) => option.value));
+    settings.querySelector(".fp-notify-button")?.addEventListener("click", () => this.addNotifyService());
+    settings.querySelector(".fp-notify-input")?.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") this.addNotifyService();
+    });
+    settings.querySelectorAll("[data-remove-notify]").forEach((button) => {
+      button.addEventListener("click", () => this.removeNotifyService(button.dataset.removeNotify));
     });
     settings.querySelectorAll("[data-alert-asset]").forEach((checkbox) => {
       checkbox.addEventListener("change", () => this.saveAssetAlert(checkbox.dataset.alertAsset));
@@ -398,11 +464,31 @@ class FinancePortfolioCard extends HTMLElement {
   }
 
   notifyServiceOptions() {
-    const notifyServices = Object.keys(this._hass.states || {})
+    const notifyEntities = Object.keys(this._hass.states || {})
       .filter((entityId) => entityId.startsWith("notify."))
       .sort();
+    const notifyServices = Object.keys(this._hass.services?.notify || {})
+      .filter((service) => !["notify", "persistent_notification", "send_message"].includes(service))
+      .map((service) => `notify.${service}`)
+      .sort();
     const selected = this._hass.states[this.config.entity]?.attributes?.notify_services || [];
-    return [...new Set([...selected, ...notifyServices])];
+    return this.cleanNotifyServices([...selected, ...notifyEntities, ...notifyServices]);
+  }
+
+  notifyChip(service) {
+    return `
+      <div class="fp-chip" title="${this.escape(service)}">
+        <span>${this.escape(service)}</span>
+        <button data-remove-notify="${this.escape(service)}" title="Entfernen">×</button>
+      </div>
+    `;
+  }
+
+  cleanNotifyServices(services) {
+    return [...new Set((services || [])
+      .map((service) => String(service).trim())
+      .filter((service) => service && !["notify.notify", "notify.send_message", "notify.persistent_notification"].includes(service))
+    )].sort();
   }
 
   formatPrice(value) {
@@ -441,8 +527,22 @@ class FinancePortfolioCard extends HTMLElement {
 
   async saveNotifyServices(notifyServices) {
     await this._hass.callService("finance_portfolio", "set_options", {
-      notify_services: notifyServices,
+      notify_services: this.cleanNotifyServices(notifyServices),
     });
+  }
+
+  addNotifyService() {
+    const input = this.querySelector(".fp-notify-input");
+    const value = input?.value?.trim();
+    if (!value) return;
+    const selected = this._hass.states[this.config.entity]?.attributes?.notify_services || [];
+    this.saveNotifyServices([...selected, value]);
+    input.value = "";
+  }
+
+  removeNotifyService(service) {
+    const selected = this._hass.states[this.config.entity]?.attributes?.notify_services || [];
+    this.saveNotifyServices(selected.filter((item) => item !== service));
   }
 
   async saveAssetAlert(assetId) {
