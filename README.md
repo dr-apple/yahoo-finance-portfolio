@@ -73,7 +73,7 @@ After updating the card, hard refresh the browser or append a cache buster to th
 
 Open the Lovelace card settings via the cog button in the card.
 
-1. Select one or more notify services in **Push-Ziele**:
+1. Select one or more `notify.*` entities in **Push-Ziele**:
 
 ```text
 notify.mobile_app_dannys_iphone, notify.mobile_app_ipad

@@ -398,9 +398,8 @@ class FinancePortfolioCard extends HTMLElement {
   }
 
   notifyServiceOptions() {
-    const notifyServices = Object.keys(this._hass.services?.notify || {})
-      .filter((service) => !["persistent_notification", "send_message"].includes(service))
-      .map((service) => `notify.${service}`)
+    const notifyServices = Object.keys(this._hass.states || {})
+      .filter((entityId) => entityId.startsWith("notify."))
       .sort();
     const selected = this._hass.states[this.config.entity]?.attributes?.notify_services || [];
     return [...new Set([...selected, ...notifyServices])];

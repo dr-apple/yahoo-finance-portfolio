@@ -791,6 +791,18 @@ class FinancePortfolioRuntime:
             f"Schwelle: {threshold:g} %. Kurs: {price:.2f} EUR."
         )
         for service_name in _notify_services(self.options.get(CONF_NOTIFY_SERVICES)):
+            if self.hass.states.get(service_name) and self.hass.services.has_service(
+                "notify", "send_message"
+            ):
+                await self.hass.services.async_call(
+                    "notify",
+                    "send_message",
+                    {"title": "Finance Portfolio", "message": message},
+                    target={"entity_id": service_name},
+                    blocking=False,
+                )
+                continue
+
             if "." in service_name:
                 domain, service = service_name.split(".", 1)
             else:
