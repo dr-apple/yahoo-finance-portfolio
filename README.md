@@ -199,6 +199,8 @@ Example:
 ```python
 MANUAL_WKN_SYMBOLS = {
     "A1JWVX": "META",
+    "A14Y6F": "GOOGL",
+    "US02079K3059": "GOOGL",
 }
 ```
 

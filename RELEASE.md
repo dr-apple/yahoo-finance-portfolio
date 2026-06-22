@@ -12,7 +12,7 @@ node --check custom_components/finance_portfolio/www/finance-portfolio-card.js
 4. Create and push a tag:
 
 ```bash
-git tag v0.3.2
+git tag v0.3.3
 git push origin main --tags
 ```
 
