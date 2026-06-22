@@ -82,7 +82,10 @@ class PortfolioAssetsSensor(SensorEntity):
 
     @property
     def extra_state_attributes(self) -> dict[str, Any]:
-        return {"assets": self.runtime.asset_summary()}
+        return {
+            "assets": self.runtime.asset_summary(),
+            "notify_services": self.runtime.notify_services(),
+        }
 
     async def async_added_to_hass(self) -> None:
         self._unsub = async_dispatcher_connect(

@@ -97,6 +97,19 @@ set_alert:
               value: 5
             - label: 10 %
               value: 10
+
+set_options:
+  name: Einstellungen speichern
+  description: Speichert globale Finance-Portfolio-Einstellungen wie Push-Ziele.
+  fields:
+    notify_services:
+      name: Push-Ziele
+      description: Liste der notify Services, z. B. notify.mobile_app_dannys_iphone.
+      selector:
+        select:
+          multiple: true
+          custom_value: true
+          options: []
     down_thresholds:
       name: Minus-Schwellen
       description: Prozent-Schwellen fuer fallende Kurse.

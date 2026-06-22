@@ -21,6 +21,7 @@ It creates EUR-normalized price sensors, day/week/month percentage sensors, a ma
   - input field for new assets
   - remove button per asset
   - clickable day/week/month pills
+  - settings table for push targets and per-asset alert thresholds
 - Configurable push alarms per asset for +1/+5/+10% and -1/-5/-10%
 - Global mobile push targets via Home Assistant notify services
 
@@ -70,15 +71,15 @@ After updating the card, hard refresh the browser or append a cache buster to th
 
 ## Push Alarms
 
-Open **Settings > Devices & services > Finance Portfolio > Configure**.
+Open the Lovelace card settings via the cog button in the card.
 
-1. In **Global push settings**, enter one or more notify services separated by commas:
+1. Select one or more notify services in **Push-Ziele**:
 
 ```text
 notify.mobile_app_dannys_iphone, notify.mobile_app_ipad
 ```
 
-2. In **Push alert per asset**, select an asset and choose the active plus/minus thresholds:
+2. Set the active plus/minus thresholds per asset in the table:
 
 ```text
 +1%, +5%, +10%

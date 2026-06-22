@@ -49,6 +49,7 @@ from .const import (
     SERVICE_REMOVE_ASSET,
     SERVICE_RESET_ALARM,
     SERVICE_SET_ALERT,
+    SERVICE_SET_OPTIONS,
     SIGNAL_ASSET_ADDED,
     SIGNAL_ASSET_REMOVED,
     STORE_KEY,
@@ -111,6 +112,13 @@ SET_ALERT_SCHEMA = vol.Schema(
         vol.Optional(
             CONF_ALERT_DOWN_THRESHOLDS, default=DEFAULT_ALERT_THRESHOLDS
         ): vol.All(cv.ensure_list, [vol.Coerce(float)]),
+    }
+)
+SET_OPTIONS_SCHEMA = vol.Schema(
+    {
+        vol.Optional(CONF_NOTIFY_SERVICES, default=[]): vol.Any(
+            cv.string, vol.All(cv.ensure_list, [cv.string])
+        ),
     }
 )
 
@@ -363,6 +371,19 @@ class FinancePortfolioRuntime:
         self.hass.config_entries.async_update_entry(entry, options=options)
         self.options = options
         await self.async_save()
+        async_dispatcher_send(self.hass, f"{DOMAIN}_updated")
+
+    async def async_set_options(self, notify_services: Any) -> None:
+        """Set global options from the dashboard card."""
+        entries = self.hass.config_entries.async_entries(DOMAIN)
+        if not entries:
+            raise ValueError("Finance Portfolio config entry wurde nicht gefunden")
+
+        entry = entries[0]
+        options = dict(entry.options)
+        options[CONF_NOTIFY_SERVICES] = _notify_services(notify_services)
+        self.options = options
+        self.hass.config_entries.async_update_entry(entry, options=options)
         async_dispatcher_send(self.hass, f"{DOMAIN}_updated")
 
     async def _async_resolve_asset(
@@ -818,6 +839,10 @@ class FinancePortfolioRuntime:
             )
         return result
 
+    def notify_services(self) -> list[str]:
+        """Return configured notify services for the card."""
+        return _notify_services(self.options.get(CONF_NOTIFY_SERVICES))
+
 
 def _default_icon(quote_type: str | None) -> str:
     if quote_type == "CRYPTOCURRENCY":
@@ -909,6 +934,16 @@ async def async_setup_entry(
             LOGGER.exception("Unable to set portfolio alert")
             await _notify(hass, "Finance Portfolio Fehler", str(err))
 
+    async def handle_set_options(call: ServiceCall) -> None:
+        current_runtime = hass.data[DOMAIN]["runtime"]
+        try:
+            await current_runtime.async_set_options(
+                call.data.get(CONF_NOTIFY_SERVICES, [])
+            )
+        except Exception as err:  # noqa: BLE001
+            LOGGER.exception("Unable to set portfolio options")
+            await _notify(hass, "Finance Portfolio Fehler", str(err))
+
     if not hass.services.has_service(DOMAIN, SERVICE_ADD_ASSET):
         hass.services.async_register(
             DOMAIN, SERVICE_ADD_ASSET, handle_add, schema=ADD_ASSET_SCHEMA
@@ -926,6 +961,10 @@ async def async_setup_entry(
     if not hass.services.has_service(DOMAIN, SERVICE_SET_ALERT):
         hass.services.async_register(
             DOMAIN, SERVICE_SET_ALERT, handle_set_alert, schema=SET_ALERT_SCHEMA
+        )
+    if not hass.services.has_service(DOMAIN, SERVICE_SET_OPTIONS):
+        hass.services.async_register(
+            DOMAIN, SERVICE_SET_OPTIONS, handle_set_options, schema=SET_OPTIONS_SCHEMA
         )
 
     await hass.config_entries.async_forward_entry_setups(entry, [Platform.SENSOR])
