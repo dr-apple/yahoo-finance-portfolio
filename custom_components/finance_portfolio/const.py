@@ -19,6 +19,7 @@ SERVICE_REMOVE_ASSET = "remove_asset"
 SERVICE_REFRESH = "refresh"
 SERVICE_RESET_ALARM = "reset_alarm"
 SERVICE_SET_ALERT = "set_alert"
+SERVICE_SET_OPTIONS = "set_options"
 
 SIGNAL_ASSET_ADDED = f"{DOMAIN}_asset_added"
 SIGNAL_ASSET_REMOVED = f"{DOMAIN}_asset_removed"
