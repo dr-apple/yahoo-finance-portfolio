@@ -42,6 +42,8 @@ SEARCH_URL = "https://query2.finance.yahoo.com/v1/finance/search"
 GERMAN_EXCHANGE_SUFFIXES = (".DE", ".F", ".SG", ".DU", ".HM", ".MU", ".BE")
 MANUAL_WKN_SYMBOLS = {
     "A1JWVX": "META",
+    "A14Y6F": "GOOGL",
+    "US02079K3059": "GOOGL",
 }
 SUPPORTED_QUOTE_TYPES = {
     "EQUITY",
