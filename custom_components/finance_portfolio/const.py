@@ -5,8 +5,10 @@ from __future__ import annotations
 from datetime import timedelta
 from logging import getLogger
 
+from homeassistant.const import Platform
+
 DOMAIN = "finance_portfolio"
-PLATFORMS = ["sensor"]
+PLATFORMS: list[Platform] = [Platform.SENSOR]
 
 LOGGER = getLogger(__package__)
 

@@ -3,32 +3,30 @@
 from __future__ import annotations
 
 import asyncio
+import math
+import re
 from dataclasses import dataclass
-from datetime import datetime
 from http import HTTPStatus
 from http.cookies import SimpleCookie
 from pathlib import Path
-import re
 from typing import Any
 
 import aiohttp
 import voluptuous as vol
-
 from homeassistant import config_entries
 from homeassistant.components.http import StaticPathConfig
 from homeassistant.const import CONF_ICON, CONF_NAME, CONF_SCAN_INTERVAL, Platform
 from homeassistant.core import HomeAssistant, ServiceCall
 from homeassistant.helpers import config_validation as cv
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.dispatcher import async_dispatcher_send
-from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.event import async_track_time_interval
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.typing import ConfigType
 from homeassistant.util import dt as dt_util
 
 from .const import (
-    DEFAULT_SCAN_INTERVAL,
     CONF_ALERT_DOWN_THRESHOLDS,
     CONF_ALERT_ENABLED,
     CONF_ALERT_UP_THRESHOLDS,
@@ -37,11 +35,13 @@ from .const import (
     CONF_DEFAULT_UP_THRESHOLDS,
     CONF_NOTIFY_SERVICES,
     DEFAULT_ALERT_THRESHOLDS,
+    DEFAULT_SCAN_INTERVAL,
     DOMAIN,
     EVENT_ALARM,
     GERMAN_EXCHANGE_SUFFIXES,
     LOGGER,
     MANUAL_WKN_SYMBOLS,
+    PLATFORMS,
     QUOTE_URL,
     SEARCH_URL,
     SERVICE_ADD_ASSET,
@@ -106,19 +106,17 @@ SET_ALERT_SCHEMA = vol.Schema(
     {
         vol.Required("asset_id"): cv.string,
         vol.Optional(CONF_ALERT_ENABLED, default=True): cv.boolean,
-        vol.Optional(
-            CONF_ALERT_UP_THRESHOLDS, default=DEFAULT_ALERT_THRESHOLDS
-        ): vol.All(cv.ensure_list, [vol.Coerce(float)]),
-        vol.Optional(
-            CONF_ALERT_DOWN_THRESHOLDS, default=DEFAULT_ALERT_THRESHOLDS
-        ): vol.All(cv.ensure_list, [vol.Coerce(float)]),
+        vol.Optional(CONF_ALERT_UP_THRESHOLDS, default=DEFAULT_ALERT_THRESHOLDS): vol.All(
+            cv.ensure_list, [vol.Coerce(float)]
+        ),
+        vol.Optional(CONF_ALERT_DOWN_THRESHOLDS, default=DEFAULT_ALERT_THRESHOLDS): vol.All(
+            cv.ensure_list, [vol.Coerce(float)]
+        ),
     }
 )
 SET_OPTIONS_SCHEMA = vol.Schema(
     {
-        vol.Optional(CONF_NOTIFY_SERVICES, default=[]): vol.Any(
-            cv.string, vol.All(cv.ensure_list, [cv.string])
-        ),
+        vol.Optional(CONF_NOTIFY_SERVICES, default=[]): vol.Any(cv.string, vol.All(cv.ensure_list, [cv.string])),
     }
 )
 
@@ -136,9 +134,10 @@ def _to_float(value: Any) -> float | None:
     try:
         if value is None:
             return None
-        return float(value)
+        result = float(value)
     except (TypeError, ValueError):
         return None
+    return result if math.isfinite(result) else None
 
 
 def _thresholds(values: Any) -> list[float]:
@@ -159,16 +158,9 @@ def _notify_services(value: Any) -> list[str]:
     """Return configured notify service names."""
     if not value:
         return []
-    if isinstance(value, str):
-        raw_services = value.replace("\n", ",").split(",")
-    else:
-        raw_services = value
+    raw_services = value.replace("\n", ",").split(",") if isinstance(value, str) else value
     blocked = {"notify.notify", "notify.send_message", "notify.persistent_notification"}
-    return [
-        service
-        for item in raw_services
-        if (service := str(item).strip()) and service not in blocked
-    ]
+    return [service for item in raw_services if (service := str(item).strip()) and service not in blocked]
 
 
 @dataclass(slots=True)
@@ -190,9 +182,7 @@ class PortfolioQuote:
 class FinancePortfolioRuntime:
     """Runtime state and Yahoo access for the portfolio."""
 
-    def __init__(
-        self, hass: HomeAssistant, scan_interval, options: dict[str, Any]
-    ) -> None:
+    def __init__(self, hass: HomeAssistant, scan_interval, options: dict[str, Any]) -> None:
         self.hass = hass
         self.scan_interval = scan_interval
         self.options = options
@@ -214,9 +204,7 @@ class FinancePortfolioRuntime:
 
     async def async_start(self) -> None:
         await self.async_refresh()
-        self._unsub_interval = async_track_time_interval(
-            self.hass, self._async_interval_refresh, self.scan_interval
-        )
+        self._unsub_interval = async_track_time_interval(self.hass, self._async_interval_refresh, self.scan_interval)
 
     async def async_stop(self) -> None:
         if self._unsub_interval:
@@ -391,16 +379,12 @@ class FinancePortfolioRuntime:
         self.hass.config_entries.async_update_entry(entry, options=options)
         async_dispatcher_send(self.hass, f"{DOMAIN}_updated")
 
-    async def _async_resolve_asset(
-        self, *, search_text: str | None, symbol: str | None
-    ) -> dict[str, Any]:
+    async def _async_resolve_asset(self, *, search_text: str | None, symbol: str | None) -> dict[str, Any]:
         if symbol:
             data = await self._async_quote_symbols([symbol.upper()])
             item = data.get(symbol.upper())
             if not item:
-                raise ValueError(
-                    f"Keine Yahoo-Finance-Referenz fuer Symbol {symbol.upper()} gefunden"
-                )
+                raise ValueError(f"Keine Yahoo-Finance-Referenz fuer Symbol {symbol.upper()} gefunden")
             return {
                 "symbol": symbol.upper(),
                 "name": item.get("shortName") or item.get("longName") or symbol.upper(),
@@ -743,24 +727,18 @@ class FinancePortfolioRuntime:
             CONF_ALERT_UP_THRESHOLDS: _thresholds(
                 asset_config.get(
                     CONF_ALERT_UP_THRESHOLDS,
-                    self.options.get(
-                        CONF_DEFAULT_UP_THRESHOLDS, DEFAULT_ALERT_THRESHOLDS
-                    ),
+                    self.options.get(CONF_DEFAULT_UP_THRESHOLDS, DEFAULT_ALERT_THRESHOLDS),
                 )
             ),
             CONF_ALERT_DOWN_THRESHOLDS: _thresholds(
                 asset_config.get(
                     CONF_ALERT_DOWN_THRESHOLDS,
-                    self.options.get(
-                        CONF_DEFAULT_DOWN_THRESHOLDS, DEFAULT_ALERT_THRESHOLDS
-                    ),
+                    self.options.get(CONF_DEFAULT_DOWN_THRESHOLDS, DEFAULT_ALERT_THRESHOLDS),
                 )
             ),
         }
 
-    def _should_fire_alert(
-        self, asset: dict[str, Any], direction: str, threshold: float
-    ) -> bool:
+    def _should_fire_alert(self, asset: dict[str, Any], direction: str, threshold: float) -> bool:
         state = asset.get("alert_state") or {}
         if state.get("direction") != direction:
             return True
@@ -791,14 +769,9 @@ class FinancePortfolioRuntime:
 
         direction_label = "steigt" if direction == "up" else "faellt"
         name = asset.get("name") or asset.get("symbol") or asset_id
-        message = (
-            f"{name} {direction_label} um {change_pct} %. "
-            f"Schwelle: {threshold:g} %. Kurs: {price:.2f} EUR."
-        )
+        message = f"{name} {direction_label} um {change_pct} %. Schwelle: {threshold:g} %. Kurs: {price:.2f} EUR."
         for service_name in _notify_services(self.options.get(CONF_NOTIFY_SERVICES)):
-            if self.hass.states.get(service_name) and self.hass.services.has_service(
-                "notify", "send_message"
-            ):
+            if self.hass.states.get(service_name) and self.hass.services.has_service("notify", "send_message"):
                 await self.hass.services.async_call(
                     "notify",
                     "send_message",
@@ -892,14 +865,13 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
                 DOMAIN,
                 context={"source": config_entries.SOURCE_IMPORT},
                 data=dict(conf),
-            )
+            ),
+            "Import Finance Portfolio YAML configuration",
         )
     return True
 
 
-async def async_setup_entry(
-    hass: HomeAssistant, entry: config_entries.ConfigEntry
-) -> bool:
+async def async_setup_entry(hass: HomeAssistant, entry: config_entries.ConfigEntry) -> bool:
     """Set up Finance Portfolio from a config entry."""
     conf = dict(entry.data)
     runtime = FinancePortfolioRuntime(
@@ -909,7 +881,6 @@ async def async_setup_entry(
     )
     await runtime.async_load()
     hass.data.setdefault(DOMAIN, {})["runtime"] = runtime
-    entry.async_on_unload(entry.add_update_listener(_async_update_listener))
 
     async def handle_add(call: ServiceCall) -> None:
         current_runtime = hass.data[DOMAIN]["runtime"]
@@ -954,57 +925,45 @@ async def async_setup_entry(
     async def handle_set_options(call: ServiceCall) -> None:
         current_runtime = hass.data[DOMAIN]["runtime"]
         try:
-            await current_runtime.async_set_options(
-                call.data.get(CONF_NOTIFY_SERVICES, [])
-            )
+            await current_runtime.async_set_options(call.data.get(CONF_NOTIFY_SERVICES, []))
         except Exception as err:  # noqa: BLE001
             LOGGER.exception("Unable to set portfolio options")
             await _notify(hass, "Finance Portfolio Fehler", str(err))
 
     if not hass.services.has_service(DOMAIN, SERVICE_ADD_ASSET):
-        hass.services.async_register(
-            DOMAIN, SERVICE_ADD_ASSET, handle_add, schema=ADD_ASSET_SCHEMA
-        )
+        hass.services.async_register(DOMAIN, SERVICE_ADD_ASSET, handle_add, schema=ADD_ASSET_SCHEMA)
     if not hass.services.has_service(DOMAIN, SERVICE_REMOVE_ASSET):
-        hass.services.async_register(
-            DOMAIN, SERVICE_REMOVE_ASSET, handle_remove, schema=REMOVE_ASSET_SCHEMA
-        )
+        hass.services.async_register(DOMAIN, SERVICE_REMOVE_ASSET, handle_remove, schema=REMOVE_ASSET_SCHEMA)
     if not hass.services.has_service(DOMAIN, SERVICE_REFRESH):
         hass.services.async_register(DOMAIN, SERVICE_REFRESH, handle_refresh)
     if not hass.services.has_service(DOMAIN, SERVICE_RESET_ALARM):
-        hass.services.async_register(
-            DOMAIN, SERVICE_RESET_ALARM, handle_reset_alarm, schema=RESET_ALARM_SCHEMA
-        )
+        hass.services.async_register(DOMAIN, SERVICE_RESET_ALARM, handle_reset_alarm, schema=RESET_ALARM_SCHEMA)
     if not hass.services.has_service(DOMAIN, SERVICE_SET_ALERT):
-        hass.services.async_register(
-            DOMAIN, SERVICE_SET_ALERT, handle_set_alert, schema=SET_ALERT_SCHEMA
-        )
+        hass.services.async_register(DOMAIN, SERVICE_SET_ALERT, handle_set_alert, schema=SET_ALERT_SCHEMA)
     if not hass.services.has_service(DOMAIN, SERVICE_SET_OPTIONS):
-        hass.services.async_register(
-            DOMAIN, SERVICE_SET_OPTIONS, handle_set_options, schema=SET_OPTIONS_SCHEMA
-        )
+        hass.services.async_register(DOMAIN, SERVICE_SET_OPTIONS, handle_set_options, schema=SET_OPTIONS_SCHEMA)
 
-    await hass.config_entries.async_forward_entry_setups(entry, [Platform.SENSOR])
+    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     await runtime.async_start()
     return True
 
 
-async def _async_update_listener(
-    hass: HomeAssistant, entry: config_entries.ConfigEntry
-) -> None:
-    """Reload the integration when options change."""
-    await hass.config_entries.async_reload(entry.entry_id)
-
-
-async def async_unload_entry(
-    hass: HomeAssistant, entry: config_entries.ConfigEntry
-) -> bool:
+async def async_unload_entry(hass: HomeAssistant, entry: config_entries.ConfigEntry) -> bool:
     """Unload Finance Portfolio."""
-    unload_ok = await hass.config_entries.async_unload_platforms(entry, [Platform.SENSOR])
+    unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
     runtime: FinancePortfolioRuntime | None = hass.data.get(DOMAIN, {}).get("runtime")
     if unload_ok and runtime:
         await runtime.async_stop()
         hass.data[DOMAIN].pop("runtime", None)
+        for service in (
+            SERVICE_ADD_ASSET,
+            SERVICE_REMOVE_ASSET,
+            SERVICE_REFRESH,
+            SERVICE_RESET_ALARM,
+            SERVICE_SET_ALERT,
+            SERVICE_SET_OPTIONS,
+        ):
+            hass.services.async_remove(DOMAIN, service)
     return unload_ok
 
 
