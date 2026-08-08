@@ -6,6 +6,7 @@ import asyncio
 import math
 import re
 from dataclasses import dataclass
+from datetime import timedelta
 from http import HTTPStatus
 from http.cookies import SimpleCookie
 from pathlib import Path
@@ -87,6 +88,23 @@ CONFIG_SCHEMA = vol.Schema(
     },
     extra=vol.ALLOW_EXTRA,
 )
+
+
+def _serialize_scan_interval(value: Any) -> Any:
+    """Return a JSON-serializable scan interval for config entry storage."""
+    if isinstance(value, timedelta):
+        return value.total_seconds()
+    return value
+
+
+def _scan_interval(value: Any) -> timedelta:
+    """Return the runtime scan interval from persisted configuration."""
+    if isinstance(value, timedelta):
+        return value
+    if isinstance(value, (int, float)):
+        return timedelta(seconds=value)
+    return cv.time_period(value)
+
 
 ADD_ASSET_SCHEMA = vol.Schema(
     {
@@ -860,14 +878,31 @@ async def async_setup(hass: HomeAssistant, config: ConfigType) -> bool:
 
     conf = config.get(DOMAIN, {})
     if conf:
+        import_data = dict(conf)
+        if CONF_SCAN_INTERVAL in import_data:
+            import_data[CONF_SCAN_INTERVAL] = _serialize_scan_interval(import_data[CONF_SCAN_INTERVAL])
         hass.async_create_task(
             hass.config_entries.flow.async_init(
                 DOMAIN,
                 context={"source": config_entries.SOURCE_IMPORT},
-                data=dict(conf),
+                data=import_data,
             ),
             "Import Finance Portfolio YAML configuration",
         )
+    return True
+
+
+async def async_migrate_entry(hass: HomeAssistant, entry: config_entries.ConfigEntry) -> bool:
+    """Migrate stored configuration to JSON-safe values."""
+    if entry.version > 2:
+        return False
+
+    if entry.version == 1:
+        data = dict(entry.data)
+        if CONF_SCAN_INTERVAL in data:
+            data[CONF_SCAN_INTERVAL] = _serialize_scan_interval(data[CONF_SCAN_INTERVAL])
+        hass.config_entries.async_update_entry(entry, data=data, version=2)
+
     return True
 
 
@@ -876,7 +911,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: config_entries.ConfigEnt
     conf = dict(entry.data)
     runtime = FinancePortfolioRuntime(
         hass,
-        conf.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL),
+        _scan_interval(conf.get(CONF_SCAN_INTERVAL, DEFAULT_SCAN_INTERVAL)),
         dict(entry.options),
     )
     await runtime.async_load()
