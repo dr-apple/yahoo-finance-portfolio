@@ -5,11 +5,12 @@ from __future__ import annotations
 from typing import Any
 
 from homeassistant.components.sensor import SensorDeviceClass, SensorEntity, SensorStateClass
+from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import PERCENTAGE
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
-from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.typing import ConfigType, DiscoveryInfoType, StateType
+from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
+from homeassistant.helpers.typing import StateType
 
 from . import FinancePortfolioRuntime
 from .const import DOMAIN, SIGNAL_ASSET_ADDED, SIGNAL_ASSET_REMOVED
@@ -17,29 +18,19 @@ from .const import DOMAIN, SIGNAL_ASSET_ADDED, SIGNAL_ASSET_REMOVED
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    _entry,
-    async_add_entities: AddEntitiesCallback,
+    entry: ConfigEntry,
+    async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
     """Set up portfolio sensors from a config entry."""
     runtime: FinancePortfolioRuntime = hass.data[DOMAIN]["runtime"]
-    _async_add_portfolio_entities(hass, runtime, async_add_entities)
-
-
-async def async_setup_platform(
-    hass: HomeAssistant,
-    _config: ConfigType,
-    async_add_entities: AddEntitiesCallback,
-    _discovery_info: DiscoveryInfoType | None = None,
-) -> None:
-    """Set up portfolio sensors."""
-    runtime: FinancePortfolioRuntime = hass.data[DOMAIN]["runtime"]
-    _async_add_portfolio_entities(hass, runtime, async_add_entities)
+    _async_add_portfolio_entities(hass, entry, runtime, async_add_entities)
 
 
 def _async_add_portfolio_entities(
     hass: HomeAssistant,
+    entry: ConfigEntry,
     runtime: FinancePortfolioRuntime,
-    async_add_entities: AddEntitiesCallback,
+    async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
     """Add portfolio entities and subscribe to later asset additions."""
     entities: list[SensorEntity] = [PortfolioAssetsSensor(runtime)]
@@ -51,9 +42,7 @@ def _async_add_portfolio_entities(
     def add_asset_entities(asset_id: str) -> None:
         async_add_entities(_asset_entities(runtime, asset_id))
 
-    hass.data.setdefault(f"{DOMAIN}_unsubs", []).append(
-        async_dispatcher_connect(hass, SIGNAL_ASSET_ADDED, add_asset_entities)
-    )
+    entry.async_on_unload(async_dispatcher_connect(hass, SIGNAL_ASSET_ADDED, add_asset_entities))
 
 
 def _asset_entities(runtime: FinancePortfolioRuntime, asset_id: str) -> list[SensorEntity]:
@@ -88,13 +77,14 @@ class PortfolioAssetsSensor(SensorEntity):
         }
 
     async def async_added_to_hass(self) -> None:
-        self._unsub = async_dispatcher_connect(
-            self.hass, f"{DOMAIN}_updated", self.async_write_ha_state
-        )
+        await super().async_added_to_hass()
+        self._unsub = async_dispatcher_connect(self.hass, f"{DOMAIN}_updated", self.async_write_ha_state)
 
     async def async_will_remove_from_hass(self) -> None:
         if self._unsub:
             self._unsub()
+            self._unsub = None
+        await super().async_will_remove_from_hass()
 
 
 class PortfolioMetricSensor(SensorEntity):
@@ -108,7 +98,6 @@ class PortfolioMetricSensor(SensorEntity):
         self._attr_unique_id = f"finance_portfolio_{asset_id}_{metric}"
         if metric != "price":
             self._attr_state_class = SensorStateClass.MEASUREMENT
-        self.entity_id = self._entity_id()
 
     def _entity_id(self) -> str:
         suffix = {
@@ -118,6 +107,11 @@ class PortfolioMetricSensor(SensorEntity):
             "month": "monatskursveranderung_prozent",
         }[self.metric]
         return f"sensor.finance_portfolio_{self.asset_id}_{suffix}"
+
+    @property
+    def suggested_object_id(self) -> str:
+        """Return the stable object ID used by the dashboard card."""
+        return self._entity_id().removeprefix("sensor.")
 
     @property
     def name(self) -> str:
@@ -180,23 +174,20 @@ class PortfolioMetricSensor(SensorEntity):
         }
 
     async def async_added_to_hass(self) -> None:
-        self._unsubs.append(
-            async_dispatcher_connect(
-                self.hass, f"{DOMAIN}_updated", self.async_write_ha_state
-            )
-        )
-        self._unsubs.append(
-            async_dispatcher_connect(
-                self.hass, SIGNAL_ASSET_REMOVED, self._async_asset_removed
-            )
-        )
+        await super().async_added_to_hass()
+        self._unsubs.append(async_dispatcher_connect(self.hass, f"{DOMAIN}_updated", self.async_write_ha_state))
+        self._unsubs.append(async_dispatcher_connect(self.hass, SIGNAL_ASSET_REMOVED, self._async_asset_removed))
 
     @callback
     def _async_asset_removed(self, asset_id: str) -> None:
         if asset_id == self.asset_id:
-            self.hass.async_create_task(self.async_remove(force_remove=True))
+            self.hass.async_create_task(
+                self.async_remove(force_remove=True),
+                f"Remove Finance Portfolio asset {asset_id}",
+            )
 
     async def async_will_remove_from_hass(self) -> None:
         for unsub in self._unsubs:
             unsub()
         self._unsubs.clear()
+        await super().async_will_remove_from_hass()

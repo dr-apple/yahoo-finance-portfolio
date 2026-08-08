@@ -2,6 +2,9 @@
 
 Home Assistant custom integration for a small Yahoo Finance based portfolio/watchlist.
 
+Version `0.3.4` is compatible with Home Assistant `2026.8` and tested against
+`2026.8.1`.
+
 It creates EUR-normalized price sensors, day/week/month percentage sensors, a master portfolio sensor, and an optional Lovelace card with add/remove controls.
 
 ## Features
