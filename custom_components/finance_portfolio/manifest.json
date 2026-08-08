@@ -1,11 +1,13 @@
 {
   "domain": "finance_portfolio",
   "name": "Finance Portfolio",
-  "codeowners": [],
+  "codeowners": ["@dr-apple"],
   "config_flow": true,
-  "dependencies": [],
+  "dependencies": ["http"],
   "documentation": "https://github.com/dr-apple/yahoo-finance-portfolio",
+  "integration_type": "service",
   "iot_class": "cloud_polling",
+  "issue_tracker": "https://github.com/dr-apple/yahoo-finance-portfolio/issues",
   "requirements": [],
-  "version": "0.3.3"
+  "version": "0.3.4"
 }
