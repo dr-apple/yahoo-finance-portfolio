@@ -1,11 +1,23 @@
 # Finance Portfolio
 
+**English** · [Deutsch](README.de.md)
+
+[![hacs_badge](https://img.shields.io/badge/HACS-Custom-41BDF5.svg)](https://hacs.xyz)
+
+![Finance Portfolio](docs/images/banner.svg)
+
 Home Assistant custom integration for a small Yahoo Finance based portfolio/watchlist.
 
 Version `0.3.5` is compatible with Home Assistant `2026.8` and tested against
 `2026.8.1`.
 
 It creates EUR-normalized price sensors, day/week/month percentage sensors, a master portfolio sensor, and an optional Lovelace card with add/remove controls.
+
+![How it works: Yahoo Finance → Home Assistant → card and push](docs/images/how-it-works.svg)
+
+<img src="docs/images/card.svg" alt="Lovelace card with input field, assets with EUR price and change, and alarm settings" width="440">
+
+*Illustration – example values, not real quotes.*
 
 ## Features
 
@@ -79,7 +91,7 @@ Open the Lovelace card settings via the cog button in the card.
 1. Add one or more `notify.*` targets in **Push-Ziele**. Pick a suggestion or type the target manually:
 
 ```text
-notify.mobile_app_dannys_iphone, notify.mobile_app_ipad
+notify.mobile_app_my_iphone, notify.mobile_app_ipad
 ```
 
 2. Set the active plus/minus thresholds per asset in the table:
@@ -228,6 +240,40 @@ sensor.finance_portfolio_assets
 
 It exposes an `assets` attribute used by the custom Lovelace card.
 
+## Example automation
+
+React to the `finance_portfolio_alarm` event yourself, e.g. flash a light on a big drop:
+
+```yaml
+triggers:
+  - trigger: event
+    event_type: finance_portfolio_alarm
+    event_data:
+      direction: down
+conditions:
+  - condition: template
+    value_template: "{{ trigger.event.data.threshold >= 5 }}"
+actions:
+  - action: light.turn_on
+    target:
+      entity_id: light.office
+    data:
+      color_name: red
+      flash: short
+```
+
+`direction` is `up` or `down`, `threshold` the crossed threshold in percent.
+
+## Troubleshooting
+
+| Problem | Fix |
+|---|---|
+| WKN/ISIN not found | Add the symbol directly (`symbol: …`) or extend `MANUAL_WKN_SYMBOLS` in `const.py`. |
+| Card shows an old version | Hard-refresh the browser or add `?v=2` to the resource URL. |
+| `custom:finance-portfolio-card` not found | Add the resource `/finance_portfolio/finance-portfolio-card.js` (type *module*). |
+
+> Quotes come from Yahoo Finance and may be delayed. This is not investment advice.
+
 ## Repository Layout
 
 ```text
@@ -247,3 +293,7 @@ It exposes an `assets` attribute used by the custom Lovelace card.
 ├── README.md
 └── .gitignore
 ```
+
+## License
+
+MIT – see [LICENSE](LICENSE). Not affiliated with Yahoo.
